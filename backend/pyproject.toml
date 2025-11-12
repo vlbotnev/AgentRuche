@@ -1,0 +1,18 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [    
+    "fastapi>=0.121.1",
+    "langchain>=1.0.5",
+    "langchain-google-genai>=3.0.3",
+    "minio>=7.2.18",
+    "pydantic>=2.12.4",
+    "pydantic-settings>=2.12.0",
+    "pymongo>=4.15.4",
+    "python-multipart>=0.0.20",
+    "redis>=7.0.1",
+    "uvicorn[standard]>=0.38.0",
+]
