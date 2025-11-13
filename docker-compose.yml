@@ -1,5 +1,4 @@
 # docker-compose.yml
-version: '3.8'
 
 services:
   mongodb:
@@ -48,6 +47,18 @@ services:
       - mongodb
       - minio
       - redis
+
+  worker:
+    build:
+      context: ./backend
+    container_name: call-analyzer-worker
+    command: [ "uv", "run", "python", "-u", "-m", "services.worker" ]
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      - backend
 
   frontend:
     build:

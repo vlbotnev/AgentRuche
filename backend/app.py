@@ -3,17 +3,32 @@ from fastapi import FastAPI, UploadFile, File
 from contextlib import asynccontextmanager
 from typing import List
 from pydantic import BaseModel
+import io
+import logging
+import uuid
+import os
 
-# from config import settings, db
-from utils import minio_client  # , redis_queue
+from config import db_config
+from config.logging_config import setup_logging
+from config.db_config import db_manager
+from utils.redis_queue import redis_manager
+from utils.minio_client import minio_manager
+from utils import minio_client, redis_queue
 # from tools import database_tools
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Application startup...")
-    minio_client.initialize_minio_bucket()
+    setup_logging()
+    db_manager.connect()
+    redis_manager.connect()
+    minio_manager.connect()
     yield
+    db_manager.close()
+    redis_manager.close()
     print("Application shutdown...")
 
 
@@ -27,8 +42,40 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/calls/upload")
 async def upload_calls(files: List[UploadFile] = File(...)):
-    print("Placeholder: /api/calls/upload hit")
-    return {"message": "Files uploaded successfully", "call_ids": ["mock_id_1"]}
+    """Handles uploading of one or more audio files."""
+    call_ids = []
+    for file in files:
+        try:
+            file_extension = os.path.splitext(file.filename)[1]
+            file_name = os.path.splitext(file.filename)[0]
+            unique_filename = f"{file_name}_{uuid.uuid4()}{file_extension}"
+
+            # Read file content into memory
+            file_content = file.file.read()
+            file_size = len(file_content)
+            file_stream = io.BytesIO(file_content)
+
+            # 1. Save to Minio
+            minio_path = minio_client.upload_file_to_minio(
+                file_name=unique_filename, file_data=file_stream, file_size=file_size
+            )
+
+            # 2. Create DB record
+            call_id = db_config.create_call_record(
+                original_filename=file.filename,
+                minio_path=minio_path,
+            )
+
+            # 3. Push job to Redis queue
+            redis_queue.push_job_to_queue({"call_id": call_id})
+
+            call_ids.append(call_id)
+        except Exception as e:
+            logger.error(f"Failed to process file {file.filename}: {e}", exc_info=True)
+            # Handle potential failures during the upload process
+            return {"error": f"Failed to process file {file.filename}: {e}"}
+
+    return {"message": "Files queued for processing.", "call_ids": call_ids}
 
 
 @app.get("/api/calls")
